@@ -1,21 +1,14 @@
 {
   "domain": "codex_conversation",
   "name": "OpenAI Codex Conversation",
-  "codeowners": [
-    "@DeadPixel99",
-    "@petretiandrea"
-  ],
+  "codeowners": ["@DeadPixel99", "@petretiandrea"],
   "config_flow": true,
-  "dependencies": [
-    "ai_task",
-    "auth",
-    "conversation"
-  ],
-  "documentation": "https://github.com/DeadPixel99/hass-codex-conversation",
+  "dependencies": ["ai_task", "auth", "conversation"],
+  "documentation": "https://github.com/fixtse/hass-codex-conversation",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/DeadPixel99/hass-codex-conversation/issues",
+  "issue_tracker": "https://github.com/fixtse/hass-codex-conversation/issues",
   "requirements": ["voluptuous-openapi==0.4.1"],
   "single_config_entry": true,
-  "version": "1.1.3"
+  "version": "1.2.0"
 }

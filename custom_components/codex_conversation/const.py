@@ -4,6 +4,7 @@ from homeassistant.const import CONF_LLM_HASS_API  # noqa: F401
 from homeassistant.helpers import llm
 
 DOMAIN = "codex_conversation"
+USAGE_UPDATE_INTERVAL = 300
 
 # Options keys
 CONF_MODEL = "model"

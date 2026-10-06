@@ -1,5 +1,7 @@
 # hass-codex-conversation
 
+**Release 1.2.0** adds built-in Codex account monitoring with the existing login.
+
 A [Home Assistant](https://www.home-assistant.io/) custom integration that brings **OpenAI Codex** models into your smart home as a conversation agent, without an API key or separate billing.
 
 ## The Idea
@@ -17,6 +19,7 @@ This integration reuses the same authenticated Codex backend flow and exposes it
 - Multi-turn conversations with full chat history.
 - Home Assistant Assist integration.
 - Automatic token refresh.
+- Account-wide usage, credit, spending, profile and reset sensors using the same login.
 - Initial `ai_task` support for `generate_data`.
 
 ## Requirements
@@ -30,13 +33,13 @@ This integration reuses the same authenticated Codex backend flow and exposes it
 
 ### HACS
 
-[![Open your Home Assistant instance and add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=DeadPixel99&repository=hass-codex-conversation&category=integration)
+[![Open your Home Assistant instance and add this repository to HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=fixtse&repository=hass-codex-conversation&category=integration)
 
 Or add it manually:
 
 1. Open HACS and go to **Integrations**.
 2. Open the menu and choose **Custom repositories**.
-3. Add `https://github.com/DeadPixel99/hass-codex-conversation` as an
+3. Add `https://github.com/fixtse/hass-codex-conversation` as an
    **Integration** repository.
 4. Search for **OpenAI Codex Conversation** and install the latest release.
 5. Restart Home Assistant.
@@ -73,6 +76,92 @@ available model so it can be replaced.
 | Option | Description                                            | Default                                                     |
 | ------ | ------------------------------------------------------ | ----------------------------------------------------------- |
 | Model  | Codex model used for the conversation agent or AI task | `gpt-6.1-sol` when available, otherwise first account model |
+
+## Usage Sensors
+
+Usage monitoring is built in and reuses your existing Codex account login. Reload
+OpenAI Codex Conversation after updating to create the sensors; no second
+integration or authorization is required.
+
+The account device exposes the same sensor families as
+[Codex Usage](https://github.com/LucaFSmart/codex-usage):
+
+The stable keys below identify all **37 base entities** (32 sensors and 5 binary
+sensors). Home Assistant generates the final entity IDs from the device and
+translated entity names, so they can differ from these keys. Five-hour and weekly
+entities are created only when their windows are reported, or when restoring an
+existing registered entity. Additional windows are discovered automatically.
+
+| Key                                     | Name                             | Unit/type | Enabled by default  |
+| --------------------------------------- | -------------------------------- | --------- | ------------------- |
+| `plan`                                  | Plan                             | text      | Yes                 |
+| `five_hour_usage`                       | 5-hour usage                     | %         | Yes (when reported) |
+| `five_hour_remaining`                   | 5-hour remaining                 | %         | Yes (when reported) |
+| `five_hour_reset`                       | 5-hour reset                     | timestamp | Yes (when reported) |
+| `five_hour_budget`                      | 5-hour usage budget              | pp/h      | No (when reported)  |
+| `weekly_usage`                          | Weekly usage                     | %         | Yes (when reported) |
+| `weekly_remaining`                      | Weekly remaining                 | %         | Yes (when reported) |
+| `weekly_reset`                          | Weekly reset                     | timestamp | Yes (when reported) |
+| `weekly_budget`                         | Weekly usage budget              | pp/h      | No (when reported)  |
+| `weekly_pace`                           | Weekly usage pace                | %         | Yes (when reported) |
+| `available_reset_credits`               | Available resets                 | resets    | Yes                 |
+| `credit_balance`                        | Credit balance                   | credits   | No                  |
+| `spend_used`                            | Spend used                       | credits   | No                  |
+| `spend_limit`                           | Spend limit                      | credits   | No                  |
+| `spend_remaining`                       | Spend remaining                  | credits   | No                  |
+| `spend_usage`                           | Spend usage                      | %         | No                  |
+| `spend_reset`                           | Spend reset                      | timestamp | No                  |
+| `lifetime_tokens`                       | Lifetime tokens                  | tokens    | No                  |
+| `peak_daily_tokens`                     | Peak daily tokens                | tokens    | No                  |
+| `current_streak_days`                   | Current streak                   | d         | No                  |
+| `longest_streak_days`                   | Longest streak                   | d         | No                  |
+| `total_threads`                         | Total threads                    | threads   | No                  |
+| `longest_running_turn`                  | Longest running turn             | s         | No                  |
+| `fast_mode_usage`                       | Fast mode usage                  | %         | No                  |
+| `total_skills_used`                     | Total skill uses                 | uses      | No                  |
+| `unique_skills_used`                    | Unique skills used               | skills    | No                  |
+| `most_used_reasoning_effort`            | Most used reasoning effort       | text      | No                  |
+| `most_used_reasoning_effort_percentage` | Most used reasoning effort share | %         | No                  |
+| `usage_last_success`                    | Last usage update                | timestamp | No                  |
+| `profile_last_success`                  | Last profile update              | timestamp | No                  |
+| `reset_details_last_success`            | Last reset-details update        | timestamp | No                  |
+| `workspace_discovery_last_success`      | Last workspace discovery         | timestamp | No                  |
+| `limit_reached`                         | Rate limit reached               | on/off    | Yes                 |
+| `credits_available`                     | Credits available                | on/off    | No                  |
+| `credits_unlimited`                     | Unlimited credits                | on/off    | No                  |
+| `credits_overage_limit_reached`         | Credit overage limit reached     | on/off    | No                  |
+| `spend_limit_reached`                   | Spend limit reached              | on/off    | No                  |
+
+Each additional feature window adds `usage`, `remaining`, `reset`, and (when its
+duration is known) `budget` sensors. Names include the feature and duration;
+identities use the provider's stable feature ID and primary/secondary window.
+Usage attributes include reported `allowed`, `limit_reached`, and optional
+`normal_model_slug`. Disappearing features retain their entities and history.
+Luna Reserve appears when the provider reports its separate allowance.
+
+Core usage and limit sensors are enabled automatically. Credits, spending,
+profile, budgets and diagnostic timestamps are disabled by default; enable the
+ones you want on the integration's entity page. Optional profile and reset
+sources are still read hourly, independently of entity enablement.
+
+Usage refreshes every five minutes, even when you are not sending conversations.
+Profile and saved-reset details refresh hourly; saved-reset details are also
+refreshed when the reported count or reset period changes. Workspace lookup is
+read once per integration load. Provider cooldowns apply to automatic and manual
+refreshes. Optional endpoint failures keep healthy usage readings intact.
+
+These readings describe the whole ChatGPT account/workspace allowance, including
+usage outside Home Assistant. Missing fields remain unknown, and unreported
+windows are not inferred from the plan name. Budgets are planning rates, not
+provider quotas or spending limits, and expire when their observation is stale
+or the reset time passes. Credit units are not dollars or OpenAI API credits.
+
+This adds native entities rather than the separate integration's custom dashboard
+card or warning blueprint. Existing `codex_usage` entity IDs are not migrated;
+update dashboards and automations to the new entities before removing it.
+
+The normalized sensor and budget helpers are adapted under the original MIT
+license; see [third-party notices](THIRD_PARTY_NOTICES.md).
 
 ## How It Works
 
@@ -165,8 +254,8 @@ This starts Home Assistant using `config/configuration.yaml`.
 
 ## Support
 
-- Report bugs through the [issue tracker](https://github.com/DeadPixel99/hass-codex-conversation/issues).
-- Review installable versions on the [releases page](https://github.com/DeadPixel99/hass-codex-conversation/releases).
+- Report bugs through the [issue tracker](https://github.com/fixtse/hass-codex-conversation/issues).
+- Review installable versions on the [releases page](https://github.com/fixtse/hass-codex-conversation/releases).
 - HACS installs stable GitHub releases; the default branch is also available
   from HACS's version selector for testing.
 

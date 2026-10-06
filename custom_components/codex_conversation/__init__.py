@@ -9,10 +9,16 @@ from homeassistant.helpers import config_entry_oauth2_flow, config_validation as
 
 from .const import DOMAIN
 from .oauth import CodexOAuth2Implementation
+from .usage_coordinator import CodexUsageCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [Platform.AI_TASK, Platform.CONVERSATION]
+PLATFORMS = [
+    Platform.AI_TASK,
+    Platform.CONVERSATION,
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+]
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
@@ -34,6 +40,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
 
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = session
+    entry.runtime_data = CodexUsageCoordinator(hass, entry, session)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))

@@ -43,8 +43,9 @@ class CodexHAAuth(AbstractAuth):
         self,
         session: aiohttp.ClientSession,
         oauth_session: config_entry_oauth2_flow.OAuth2Session,
+        endpoint: str = CODEX_ENDPOINT,
     ) -> None:
-        super().__init__(session, CODEX_ENDPOINT)
+        super().__init__(session, endpoint)
         self._oauth_session = oauth_session
 
     async def async_get_access_token(self) -> str:

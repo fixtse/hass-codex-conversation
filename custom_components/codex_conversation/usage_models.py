@@ -1,0 +1,707 @@
+"""Usage models adapted from LucaFSmart/codex-usage (MIT)."""
+
+# MIT License
+#
+# Copyright (c) 2026 Codex Usage contributors
+#
+# Permission is hereby granted, free of charge, to any person obtaining a copy
+# of this software and associated documentation files (the "Software"), to deal
+# in the Software without restriction, including without limitation the rights
+# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+# copies of the Software, and to permit persons to whom the Software is
+# furnished to do so, subject to the following conditions:
+#
+# The above copyright notice and this permission notice shall be included in all
+# copies or substantial portions of the Software.
+#
+# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+# SOFTWARE.
+#
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from decimal import Decimal, InvalidOperation
+import math
+from typing import Any
+
+MAX_ADDITIONAL_RATE_LIMITS = 50
+
+
+@dataclass(frozen=True, slots=True)
+class RateLimitWindow:
+    """One rolling rate-limit window."""
+
+    used_percent: float
+    window_minutes: int | None
+    resets_at: datetime | None
+
+    @property
+    def remaining_percent(self) -> float:
+        """Return the remaining percentage, clamped to 0..100."""
+        return max(0.0, min(100.0, 100.0 - self.used_percent))
+
+    @property
+    def duration_key(self) -> str:
+        """Return a stable identifier derived from the actual window duration."""
+        if self.window_minutes is None:
+            return "unknown"
+        if _approximately(self.window_minutes, 5 * 60):
+            return "five_hour"
+        if _approximately(self.window_minutes, 7 * 24 * 60):
+            return "weekly"
+        return f"{self.window_minutes}m"
+
+    @property
+    def duration_label(self) -> str:
+        """Return a concise human-readable label for this duration."""
+        if self.duration_key == "five_hour":
+            return "5-hour"
+        if self.duration_key == "weekly":
+            return "Weekly"
+        if self.window_minutes is None:
+            return "Unknown window"
+        if self.window_minutes == 24 * 60:
+            return "Daily"
+        if self.window_minutes % (24 * 60) == 0:
+            return f"{self.window_minutes // (24 * 60)}-day"
+        if self.window_minutes % 60 == 0:
+            return f"{self.window_minutes // 60}-hour"
+        return f"{self.window_minutes}-minute"
+
+
+@dataclass(frozen=True, slots=True)
+class RateLimit:
+    """A named Codex rate limit."""
+
+    limit_id: str
+    name: str
+    allowed: bool | None
+    limit_reached: bool | None
+    primary: RateLimitWindow | None
+    secondary: RateLimitWindow | None
+    normal_model_slug: str | None = None
+
+    @property
+    def windows(self) -> tuple[tuple[str, RateLimitWindow], ...]:
+        """Return available backend windows in their original order."""
+        return tuple(
+            (position, window)
+            for position, window in (
+                ("primary", self.primary),
+                ("secondary", self.secondary),
+            )
+            if window is not None
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CreditStatus:
+    """ChatGPT credit status."""
+
+    has_credits: bool | None
+    unlimited: bool | None
+    balance: Decimal | None
+    overage_limit_reached: bool | None
+
+
+@dataclass(frozen=True, slots=True)
+class SpendLimit:
+    """Workspace or individual spend control."""
+
+    source: str | None
+    limit: Decimal | None
+    used: Decimal | None
+    remaining: Decimal | None
+    used_percent: float | None
+    remaining_percent: float | None
+    resets_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class CodexUsageData:
+    """Normalized response returned to Home Assistant entities."""
+
+    plan_type: str
+    main_limit: RateLimit
+    additional_limits: tuple[RateLimit, ...]
+    credits: CreditStatus | None
+    spend_limit: SpendLimit | None
+    spend_limit_reached: bool | None
+    blocker_reason: str | None
+    available_reset_credits: int | None
+    duplicate_limit_ids: int = 0
+    conflicting_windows: int = 0
+
+    def _main_window(self, duration_key: str) -> RateLimitWindow | None:
+        return next(
+            (
+                window
+                for _, window in self.main_limit.windows
+                if window.duration_key == duration_key
+            ),
+            None,
+        )
+
+    @property
+    def five_hour_window(self) -> RateLimitWindow | None:
+        """Return the five-hour window regardless of backend position."""
+        return self._main_window("five_hour")
+
+    @property
+    def weekly_window(self) -> RateLimitWindow | None:
+        """Return the weekly window regardless of backend position."""
+        return self._main_window("weekly")
+
+
+@dataclass(frozen=True, slots=True)
+class CodexProfileStats:
+    """Privacy-safe aggregate statistics from the Codex profile endpoint."""
+
+    lifetime_tokens: int | None
+    peak_daily_tokens: int | None
+    current_streak_days: int | None
+    longest_streak_days: int | None
+    total_threads: int | None
+    longest_running_turn_sec: int | None
+    fast_mode_usage_percentage: float | None
+    total_skills_used: int | None
+    unique_skills_used: int | None
+    most_used_reasoning_effort: str | None
+    most_used_reasoning_effort_percentage: float | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResetCredit:
+    """Privacy-safe read-only reset-credit metadata."""
+
+    reset_type: str
+    status: str
+    granted_at: datetime | None
+    expires_at: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResetCredits:
+    """Aggregated reset-credit status."""
+
+    available_count: int | None
+    total_earned_count: int | None
+    credits: tuple[ResetCredit, ...]
+    details_present: bool = True
+    malformed_rows: int = 0
+
+
+def _timestamp(value: Any) -> datetime | None:
+    try:
+        return (
+            datetime.fromtimestamp(float(value), tz=UTC) if value is not None else None
+        )
+    except ValueError, TypeError, OSError, OverflowError:
+        return None
+
+
+def _date_time(value: Any) -> datetime | None:
+    """Parse an epoch or ISO timestamp without raising."""
+    if isinstance(value, str):
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(UTC)
+        except ValueError:
+            return None
+    return _timestamp(value)
+
+
+def _decimal(value: Any) -> Decimal | None:
+    try:
+        result = Decimal(str(value)) if value is not None else None
+    except InvalidOperation, ValueError:
+        return None
+    return result if result is None or result.is_finite() else None
+
+
+def _float(value: Any) -> float | None:
+    try:
+        result = float(value) if value is not None else None
+    except TypeError, ValueError, OverflowError:
+        return None
+    return result if result is None or math.isfinite(result) else None
+
+
+def _approximately(value: int, expected: int) -> bool:
+    """Match the official Codex client's five-percent duration tolerance."""
+    return expected * 0.95 <= value <= expected * 1.05
+
+
+def _non_negative_int(value: Any) -> int | None:
+    """Return a backend integer count without accepting booleans or coercions."""
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value >= 0
+        else None
+    )
+
+
+def _positive_int(value: Any) -> int | None:
+    """Return a positive backend integer without coercing booleans or strings."""
+    return (
+        value
+        if isinstance(value, int) and not isinstance(value, bool) and value > 0
+        else None
+    )
+
+
+def _positive_seconds(value: Any) -> int | None:
+    """Return a positive whole-second duration from compatible JSON numbers."""
+    if isinstance(value, bool):
+        return None
+    result = _float(value)
+    if result is None or result <= 0 or not result.is_integer():
+        return None
+    return int(result)
+
+
+def _display_text(value: Any, *, max_length: int = 120) -> str | None:
+    """Return a bounded backend label without coercing structured values."""
+    if not isinstance(value, str):
+        return None
+    result = value.strip()
+    return result if result and len(result) <= max_length else None
+
+
+def _percentage(value: Any) -> float | None:
+    """Return a finite percentage in the inclusive 0..100 range."""
+    if isinstance(value, bool):
+        return None
+    result = _float(value)
+    return result if result is not None and 0 <= result <= 100 else None
+
+
+def _relative_seconds(value: Any) -> float | None:
+    """Return a non-negative offset in seconds from a compatible JSON number."""
+    if isinstance(value, bool):
+        return None
+    result = _float(value)
+    return result if result is not None and result >= 0 else None
+
+
+def _reset_time(
+    payload: dict[str, Any], *, observed_at: datetime | None = None
+) -> datetime | None:
+    """Return the reset time, preferring the absolute backend timestamp.
+
+    Responses may supply `reset_at`, `reset_after_seconds`, both, or neither.
+    The relative value is usable when the absolute one is missing or invalid;
+    if both are absent, the reset remains unknown until the provider reports it.
+    """
+    resets_at = _timestamp(payload.get("reset_at"))
+    if resets_at is not None:
+        return resets_at
+    offset = _relative_seconds(payload.get("reset_after_seconds"))
+    if offset is None:
+        return None
+    try:
+        return (
+            observed_at if observed_at is not None else datetime.now(UTC)
+        ) + timedelta(seconds=offset)
+    except OverflowError:
+        return None
+
+
+def _window(payload: Any, *, observed_at: datetime) -> RateLimitWindow | None:
+    if not isinstance(payload, dict) or payload.get("used_percent") is None:
+        return None
+    seconds = payload.get("limit_window_seconds")
+    seconds_value = _positive_seconds(seconds) if seconds is not None else None
+    used_percent = _percentage(payload["used_percent"])
+    if used_percent is None:
+        return None
+    minutes = (
+        (seconds_value + 59) // 60
+        if seconds_value is not None and seconds_value > 0
+        else None
+    )
+    return RateLimitWindow(
+        used_percent=used_percent,
+        window_minutes=minutes,
+        resets_at=_reset_time(payload, observed_at=observed_at),
+    )
+
+
+def _reported_reached_reason(value: Any) -> str | None:
+    """Normalize both historical object and current scalar reached-type shapes."""
+    if isinstance(value, dict):
+        value = value.get("type")
+    return _blocker_reason(value)
+
+
+def _rate_limit(
+    limit_id: str,
+    name: str,
+    payload: Any,
+    *,
+    observed_at: datetime,
+    reached_reason: str | None = None,
+    normal_model_slug: str | None = None,
+) -> RateLimit:
+    details = payload if isinstance(payload, dict) else {}
+    allowed = (
+        details.get("allowed") if isinstance(details.get("allowed"), bool) else None
+    )
+    reported_reached = (
+        details.get("limit_reached")
+        if isinstance(details.get("limit_reached"), bool)
+        else None
+    )
+    reached_by_type = (
+        reached_reason == "usage_limit"
+        or _reported_reached_reason(details.get("rate_limit_reached_type"))
+        == "usage_limit"
+    )
+    return RateLimit(
+        limit_id=limit_id,
+        name=name,
+        allowed=allowed,
+        limit_reached=True if allowed is False or reached_by_type else reported_reached,
+        primary=_window(details.get("primary_window"), observed_at=observed_at),
+        secondary=_window(details.get("secondary_window"), observed_at=observed_at),
+        normal_model_slug=normal_model_slug,
+    )
+
+
+def parse_usage(payload: dict[str, Any]) -> CodexUsageData:
+    """Normalize the Codex usage response."""
+    observed_at = datetime.now(UTC)
+    main_reached_reason = _reported_reached_reason(
+        payload.get("rate_limit_reached_type")
+    )
+    main = _rate_limit(
+        "codex",
+        "Codex",
+        payload.get("rate_limit"),
+        observed_at=observed_at,
+        reached_reason=main_reached_reason,
+    )
+    additional: list[RateLimit] = []
+
+    for position, window in main.windows:
+        if window.duration_key in ("five_hour", "weekly"):
+            continue
+        duration_id = (
+            f"unknown_{position}"
+            if window.duration_key == "unknown"
+            else window.duration_key
+        )
+        additional.append(
+            RateLimit(
+                limit_id=f"codex_{duration_id}",
+                name="Codex",
+                allowed=main.allowed,
+                limit_reached=main.limit_reached,
+                primary=window if position == "primary" else None,
+                secondary=window if position == "secondary" else None,
+            )
+        )
+
+    raw_additional = payload.get("additional_rate_limits")
+    if not isinstance(raw_additional, list):
+        raw_additional = []
+    parsed_additional: list[RateLimit] = []
+    for item in raw_additional[:MAX_ADDITIONAL_RATE_LIMITS]:
+        if not isinstance(item, dict):
+            continue
+        limit_id = (
+            _display_text(item.get("metered_feature"), max_length=80)
+            or _display_text(item.get("limit_name"), max_length=80)
+            or "additional"
+        )
+        reported_name = _display_text(item.get("limit_name"))
+        name = (
+            "Luna Reserve"
+            if limit_id == "base_model_inference"
+            and reported_name
+            and reported_name.casefold() == "gpt-reserve"
+            else reported_name or limit_id.replace("_", " ").title()
+        )
+        parsed_additional.append(
+            _rate_limit(
+                limit_id,
+                name,
+                item.get("rate_limit"),
+                observed_at=observed_at,
+                normal_model_slug=_display_text(
+                    item.get("normal_model_slug"), max_length=80
+                ),
+            )
+        )
+
+    # The current backend schema reports code review through
+    # `additional_rate_limits`. This dedicated key is an older response shape
+    # that is kept so accounts still served it do not lose the limit.
+    code_review_payload = payload.get("code_review_rate_limit")
+    if isinstance(code_review_payload, dict):
+        details = code_review_payload.get("rate_limit", code_review_payload)
+        parsed_additional.append(
+            _rate_limit("code_review", "Code review", details, observed_at=observed_at)
+        )
+
+    duplicates = 0
+    conflicts = 0
+    by_id: dict[str, RateLimit] = {}
+    ambiguous_windows: set[tuple[str, str]] = set()
+    ambiguous_model_slugs: set[str] = set()
+    for limit in parsed_additional:
+        previous = by_id.get(limit.limit_id)
+        if previous is None:
+            by_id[limit.limit_id] = limit
+            continue
+        duplicates += 1
+        primary_conflict = (
+            previous.primary is not None
+            and limit.primary is not None
+            and previous.primary != limit.primary
+        )
+        secondary_conflict = (
+            previous.secondary is not None
+            and limit.secondary is not None
+            and previous.secondary != limit.secondary
+        )
+        if primary_conflict:
+            ambiguous_windows.add((limit.limit_id, "primary"))
+        if secondary_conflict:
+            ambiguous_windows.add((limit.limit_id, "secondary"))
+        primary = (
+            None
+            if (limit.limit_id, "primary") in ambiguous_windows
+            else (previous.primary or limit.primary)
+        )
+        secondary = (
+            None
+            if (limit.limit_id, "secondary") in ambiguous_windows
+            else (previous.secondary or limit.secondary)
+        )
+        if primary_conflict or secondary_conflict:
+            conflicts += 1
+        restrictive = previous.limit_reached is True or limit.limit_reached is True
+        allowed_false = previous.allowed is False or limit.allowed is False
+        allowed = (
+            False
+            if allowed_false
+            else (True if previous.allowed is True and limit.allowed is True else None)
+        )
+        reached = (
+            True
+            if restrictive or allowed_false
+            else (
+                False
+                if previous.limit_reached is False and limit.limit_reached is False
+                else None
+            )
+        )
+        slug_conflict = (
+            previous.normal_model_slug is not None
+            and limit.normal_model_slug is not None
+            and previous.normal_model_slug != limit.normal_model_slug
+        )
+        if slug_conflict:
+            ambiguous_model_slugs.add(limit.limit_id)
+        normal_model_slug = (
+            None
+            if limit.limit_id in ambiguous_model_slugs
+            else previous.normal_model_slug or limit.normal_model_slug
+        )
+        name = (
+            previous.name
+            if previous.name == limit.name
+            else limit.limit_id.replace("_", " ").title()
+        )
+        by_id[limit.limit_id] = RateLimit(
+            limit.limit_id,
+            name,
+            allowed,
+            reached,
+            primary,
+            secondary,
+            normal_model_slug,
+        )
+    additional.extend(by_id.values())
+
+    credits_payload = payload.get("credits")
+    credits = None
+    if isinstance(credits_payload, dict):
+        credits = CreditStatus(
+            has_credits=(
+                credits_payload.get("has_credits")
+                if isinstance(credits_payload.get("has_credits"), bool)
+                else None
+            ),
+            unlimited=(
+                credits_payload.get("unlimited")
+                if isinstance(credits_payload.get("unlimited"), bool)
+                else None
+            ),
+            balance=_decimal(credits_payload.get("balance")),
+            overage_limit_reached=(
+                credits_payload.get("overage_limit_reached")
+                if isinstance(credits_payload.get("overage_limit_reached"), bool)
+                else None
+            ),
+        )
+
+    spend_payload = payload.get("spend_control")
+    spend_limit = None
+    spend_signals = [
+        value
+        for value in (
+            payload.get("spend_limit_reached"),
+            payload.get("spend_control_reached"),
+        )
+        if isinstance(value, bool)
+    ]
+    spend_reached = (
+        True if True in spend_signals else (False if False in spend_signals else None)
+    )
+    if isinstance(spend_payload, dict):
+        nested_spend_reached = (
+            spend_payload.get("reached")
+            if isinstance(spend_payload.get("reached"), bool)
+            else None
+        )
+        spend_reached = (
+            True
+            if spend_reached is True or nested_spend_reached is True
+            else (
+                False
+                if spend_reached is False or nested_spend_reached is False
+                else None
+            )
+        )
+        item = spend_payload.get("individual_limit")
+        if isinstance(item, dict):
+            spend_limit = SpendLimit(
+                source=_display_text(item.get("source"), max_length=80),
+                limit=_decimal(item.get("limit")),
+                used=_decimal(item.get("used")),
+                remaining=_decimal(item.get("remaining")),
+                used_percent=_percentage(item.get("used_percent")),
+                remaining_percent=_percentage(item.get("remaining_percent")),
+                resets_at=_reset_time(item),
+            )
+
+    blocker_reason = main_reached_reason or _blocker_reason(
+        payload.get("blocker_reason")
+    )
+    if blocker_reason is None and spend_reached is True:
+        blocker_reason = "spend"
+    if (
+        blocker_reason is None
+        and credits is not None
+        and credits.overage_limit_reached is True
+    ):
+        blocker_reason = "credits"
+    if blocker_reason is None and main.limit_reached is True:
+        blocker_reason = "usage_limit"
+    reset_credits_payload = payload.get("rate_limit_reset_credits")
+    available_reset_credits = (
+        _non_negative_int(reset_credits_payload.get("available_count"))
+        if isinstance(reset_credits_payload, dict)
+        else None
+    )
+    return CodexUsageData(
+        plan_type=_display_text(payload.get("plan_type"), max_length=80) or "unknown",
+        main_limit=main,
+        additional_limits=tuple(additional),
+        credits=credits,
+        spend_limit=spend_limit,
+        spend_limit_reached=spend_reached,
+        blocker_reason=blocker_reason,
+        available_reset_credits=available_reset_credits,
+        duplicate_limit_ids=duplicates,
+        conflicting_windows=conflicts,
+    )
+
+
+def _blocker_reason(value: Any) -> str | None:
+    """Map raw backend blocker strings to a safe stable enum."""
+    if not isinstance(value, str) or not value:
+        return None
+    normalized = value.casefold()
+    if "spend" in normalized:
+        return "spend"
+    if "credit" in normalized:
+        return "credits"
+    if (
+        "usage" in normalized
+        or "rate_limit" in normalized
+        or "rate-limit" in normalized
+    ):
+        return "usage_limit"
+    return "unknown"
+
+
+def parse_reset_credits(payload: dict[str, Any]) -> ResetCredits:
+    """Normalize reset-credit metadata and discard private descriptions and IDs."""
+    available_count = _non_negative_int(payload.get("available_count"))
+    total_earned_count = _non_negative_int(payload.get("total_earned_count"))
+    credits: list[ResetCredit] = []
+    raw_credits = payload.get("credits")
+    details_present = isinstance(raw_credits, list)
+    malformed_rows = 0
+    if details_present:
+        for item in raw_credits:
+            if not isinstance(item, dict):
+                malformed_rows += 1
+                continue
+            reset_type = item.get("reset_type")
+            status = item.get("status")
+            if not isinstance(reset_type, str) or not isinstance(status, str):
+                malformed_rows += 1
+                continue
+            credits.append(
+                ResetCredit(
+                    reset_type=reset_type,
+                    status=status,
+                    granted_at=_date_time(item.get("granted_at")),
+                    expires_at=_date_time(item.get("expires_at")),
+                )
+            )
+    return ResetCredits(
+        available_count,
+        total_earned_count,
+        tuple(credits),
+        details_present,
+        malformed_rows,
+    )
+
+
+def parse_profile(payload: dict[str, Any]) -> CodexProfileStats:
+    """Normalize privacy-safe aggregate Codex profile statistics."""
+    stats = payload.get("stats")
+    values = stats if isinstance(stats, dict) else {}
+    effort = values.get("most_used_reasoning_effort")
+    return CodexProfileStats(
+        lifetime_tokens=_non_negative_int(values.get("lifetime_tokens")),
+        peak_daily_tokens=_non_negative_int(values.get("peak_daily_tokens")),
+        current_streak_days=_non_negative_int(values.get("current_streak_days")),
+        longest_streak_days=_non_negative_int(values.get("longest_streak_days")),
+        total_threads=_non_negative_int(values.get("total_threads")),
+        longest_running_turn_sec=_non_negative_int(
+            values.get("longest_running_turn_sec")
+        ),
+        fast_mode_usage_percentage=_percentage(
+            values.get("fast_mode_usage_percentage")
+        ),
+        total_skills_used=_non_negative_int(values.get("total_skills_used")),
+        unique_skills_used=_non_negative_int(values.get("unique_skills_used")),
+        most_used_reasoning_effort=(
+            effort if isinstance(effort, str) and effort else None
+        ),
+        most_used_reasoning_effort_percentage=_percentage(
+            values.get("most_used_reasoning_effort_percentage")
+        ),
+    )
