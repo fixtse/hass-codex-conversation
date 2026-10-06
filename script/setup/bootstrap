@@ -118,45 +118,8 @@ if [[ "$VENV_IS_EXTERNAL" == "true" ]]; then
     set -e
 fi
 
-log_header "Installing development dependencies"
-uv sync --group dev
-
-log_header "Installing test dependencies"
-uv sync --group test
-
-log_header "Installing runtime dependencies"
-if [[ -s requirements.txt ]] && grep -qv '^#' requirements.txt | grep -q '[^[:space:]]'; then
-    uv sync
-else
-    log_info "No runtime dependencies defined (this is normal for blueprints)"
-fi
-
-HA_VERSION="${HA_VERSION:-$(grep '"homeassistant"' hacs.json | head -1 | sed 's/.*"homeassistant"\s*:\s*"\([^"]*\)".*/\1/')}"
-
-if [[ -z "$HA_VERSION" ]]; then
-    log_error "HA_VERSION not set and could not be determined from hacs.json"
-    exit 1
-fi
-HA_CORE_BASE_URL="https://raw.githubusercontent.com/home-assistant/core/${HA_VERSION}"
-
-log_header "Installing Home Assistant ${HA_VERSION} runtime dependencies"
-mkdir -p "/tmp/homeassistant"
-curl -fsSL "${HA_CORE_BASE_URL}/homeassistant/package_constraints.txt" -o "/tmp/homeassistant/package_constraints.txt"  # constraints for requirements files
-curl -fsSL "${HA_CORE_BASE_URL}/requirements.txt" -o "/tmp/requirements.txt"  # required by requirements_all.txt
-curl -fsSL "${HA_CORE_BASE_URL}/requirements_all.txt" -o "/tmp/requirements_all.txt"
-uv pip install --requirement "/tmp/requirements_all.txt"
-
-log_header "Installing Home Assistant ${HA_VERSION} test dependencies"
-curl -fsSL "${HA_CORE_BASE_URL}/requirements_test_pre_commit.txt" -o "/tmp/requirements_test_pre_commit.txt"  # required by requirements_test.txt
-curl -fsSL "${HA_CORE_BASE_URL}/requirements_test.txt" -o "/tmp/requirements_test.txt"
-uv pip install --requirement "/tmp/requirements_test.txt"
-
-log_header "Installing Home Assistant ${HA_VERSION} core"
-uv pip install "homeassistant==${HA_VERSION}"
-
-set +e
-rm -rf /tmp/requirements*.txt /tmp/homeassistant/ || log_warning "Failed to clean up temporary files"
-set -e
+log_header "Installing locked development and integration dependencies"
+UV_PROJECT_ENVIRONMENT="$VENV_PATH" uv sync --locked --group dev
 
 # Only install pre-commit hooks in local development, not in CI
 # GITHUB_ACTIONS is always set to "true" in GitHub Actions environments

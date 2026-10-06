@@ -31,13 +31,9 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .codex_api import (
-    CodexApiError,
     CodexClient,
-    CodexContextWindowExceeded,
-    CodexQuotaExceeded,
-    CodexRateLimited,
+    CodexError,
     CodexRequest,
-    CodexServerOverloaded,
     FunctionCallAdded,
     FunctionCallArgumentsDone,
     OutputTextDelta,
@@ -243,13 +239,7 @@ async def async_run_chat_log(
                 _events_to_deltas(client, request),
             ):
                 pass
-        except (
-            CodexApiError,
-            CodexContextWindowExceeded,
-            CodexQuotaExceeded,
-            CodexRateLimited,
-            CodexServerOverloaded,
-        ) as err:
+        except CodexError as err:
             _LOGGER.error("Codex error: %s", err)
             if error_cls is ConverseError:
                 raise ConverseError(

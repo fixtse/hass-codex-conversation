@@ -4,7 +4,7 @@ A [Home Assistant](https://www.home-assistant.io/) custom integration that bring
 
 ## The Idea
 
-OpenAI's **Codex CLI** is a developer tool that lets you use powerful reasoning models such as `gpt-5.1-codex` and `gpt-5.3-codex` directly from the terminal.
+OpenAI's **Codex CLI** is a developer tool that lets you use powerful reasoning models such as `gpt-6.1-sol` and `gpt-6-astra` directly from the terminal.
 Access to these models is included in a ChatGPT Plus or Pro subscription, so there is no separate OpenAI API key and no per-token billing on top of that subscription.
 
 This integration reuses the same authenticated Codex backend flow and exposes it as a native Home Assistant conversation agent.
@@ -13,7 +13,7 @@ This integration reuses the same authenticated Codex backend flow and exposes it
 
 - No API key required, authentication happens with your existing ChatGPT account through OAuth2 device flow.
 - Streaming responses, so text appears progressively in the Home Assistant conversation UI.
-- Support for the `gpt-5.*-codex` model family.
+- Account model discovery, including GPT-6 and older Codex models.
 - Multi-turn conversations with full chat history.
 - Home Assistant Assist integration.
 - Automatic token refresh.
@@ -21,10 +21,10 @@ This integration reuses the same authenticated Codex backend flow and exposes it
 
 ## Requirements
 
-| Requirement | Details |
-| --- | --- |
-| Home Assistant | 2026.3.0 or newer |
-| Subscription | ChatGPT Plus or Pro |
+| Requirement    | Details             |
+| -------------- | ------------------- |
+| Home Assistant | 2026.3.0 or newer   |
+| Subscription   | ChatGPT Plus or Pro |
 
 ## Installation
 
@@ -52,9 +52,9 @@ Or add it manually:
 2. Search for **OpenAI Codex Conversation**.
 3. A device code and URL will be shown during setup, for example:
 
-   ```text
-   Go to https://auth.openai.com/codex/device and enter code: XXXX-XXXX
-   ```
+    ```text
+    Go to https://auth.openai.com/codex/device and enter code: XXXX-XXXX
+    ```
 
 4. Open the URL in your browser, log in with your ChatGPT account, and enter the code.
 5. Approve the login, choose one of the models available to your account, and
@@ -65,13 +65,14 @@ Or add it manually:
 After setup, reconfigure a conversation agent or AI task from **Settings ->
 Devices & Services -> OpenAI Codex Conversation**. The model list is fetched
 from the signed-in OpenAI account whenever a setup or reconfiguration form
-opens, so newly released models appear without an integration update. If a
+opens, so newly released models appear without an integration update. Advanced reasoning
+effort choices follow the selected model’s advertised capabilities. If a
 configured model is retired, reconfiguration selects the first currently
 available model so it can be replaced.
 
-| Option | Description | Default |
-| --- | --- | --- |
-| Model | Codex model used for the conversation agent or AI task | First available account model |
+| Option | Description                                            | Default                                                     |
+| ------ | ------------------------------------------------------ | ----------------------------------------------------------- |
+| Model  | Codex model used for the conversation agent or AI task | `gpt-6.1-sol` when available, otherwise first account model |
 
 ## How It Works
 
@@ -99,32 +100,45 @@ ChatLog delta stream  -->  HA Assist UI
 
 The integration code is layered under `custom_components/codex_conversation/codex_api/`:
 
-| Module | Responsibility |
-| --- | --- |
-| `auth` | `AbstractAuth`, JWT helpers, raw OAuth2 HTTP calls |
-| `client.py` | `CodexClient`, streams requests using authenticated transport |
-| `models.py` | Typed SSE event dataclasses |
-| `requests.py` | `CodexRequest` builder |
-| `sse.py` | SSE frame parsing |
-| `errors.py` | Exception hierarchy |
+| Module        | Responsibility                                                |
+| ------------- | ------------------------------------------------------------- |
+| `auth`        | `AbstractAuth`, JWT helpers, raw OAuth2 HTTP calls            |
+| `client.py`   | `CodexClient`, streams requests using authenticated transport |
+| `models.py`   | Typed SSE event dataclasses                                   |
+| `requests.py` | `CodexRequest` builder                                        |
+| `sse.py`      | SSE frame parsing                                             |
+| `errors.py`   | Exception hierarchy                                           |
 
 Home Assistant-specific glue lives outside that client package:
 
-| File | Responsibility |
-| --- | --- |
-| `oauth.py` | `CodexHAAuth` and OAuth2 implementation |
+| File              | Responsibility                                          |
+| ----------------- | ------------------------------------------------------- |
+| `oauth.py`        | `CodexHAAuth` and OAuth2 implementation                 |
 | `conversation.py` | `ConversationEntity` bridge between `ChatLog` and Codex |
-| `ai_task.py` | AI Task entity support |
-| `config_flow.py` | Device-code OAuth flow |
+| `ai_task.py`      | AI Task entity support                                  |
+| `config_flow.py`  | Device-code OAuth flow                                  |
 
 ## Development
 
 The repository setup has been aligned with a more modern HACS integration blueprint style.
 
+The development lockfile targets Home Assistant **2026.9.4** and Python **3.14**.
+The Codex backend protocol baseline is CLI **0.160.1**; the integration sends HTTP
+requests directly and does not need the CLI installed.
+
 ### Local Bootstrap
 
 ```bash
 bash script/setup/bootstrap
+```
+
+For a minimal setup using an existing Python installation:
+
+```bash
+uv sync --locked --group dev
+uv run --locked pytest
+uv run --locked ruff check .
+uv run --locked ruff format . --check
 ```
 
 ### Run Home Assistant

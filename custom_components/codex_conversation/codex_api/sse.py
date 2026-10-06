@@ -21,6 +21,7 @@ from .errors import (
     CodexQuotaExceeded,
     CodexRateLimited,
     CodexServerOverloaded,
+    CodexStreamError,
     CodexUsageNotIncluded,
 )
 from .models import (
@@ -80,6 +81,8 @@ def parse_event(data_str: str) -> ResponseEvent | None:
         _LOGGER.debug("codex_api.sse: unparseable data payload: %.120s", data_str)
         return None
 
+    if not isinstance(evt, dict):
+        return None
     etype: str = evt.get("type", "")
 
     # ── lifecycle events ───────────────────────────────────────────────────────
@@ -88,13 +91,18 @@ def parse_event(data_str: str) -> ResponseEvent | None:
         resp = evt.get("response") or {}
         return ResponseCreated(response_id=resp.get("id", ""))
 
-    if etype == "response.completed":
+    if etype in ("response.completed", "response.failed", "response.incomplete"):
         resp = evt.get("response") or {}
-        if resp.get("status") == "failed":
+        if etype == "response.failed" or resp.get("status") == "failed":
             err = resp.get("error") or {}
             raise _classify_error(
                 err.get("code", "unknown_error"),
                 err.get("message", "Response failed"),
+            )
+        if etype == "response.incomplete" or resp.get("status") == "incomplete":
+            details = resp.get("incomplete_details") or {}
+            raise CodexStreamError(
+                f"Incomplete response: {details.get('reason', 'unknown')}"
             )
         return ResponseCompleted(usage=resp.get("usage") or {})
 
@@ -137,7 +145,11 @@ def parse_event(data_str: str) -> ResponseEvent | None:
 
     # ── reasoning ─────────────────────────────────────────────────────────────
 
-    if etype in ("response.reasoning.delta", "response.reasoning_content.delta"):
+    if etype in (
+        "response.reasoning.delta",
+        "response.reasoning_content.delta",
+        "response.reasoning_text.delta",
+    ):
         raw_delta = evt.get("delta") or {}
         text = (
             raw_delta.get("text", "") if isinstance(raw_delta, dict) else str(raw_delta)
@@ -161,7 +173,7 @@ def parse_event(data_str: str) -> ResponseEvent | None:
     # ── server-side errors ─────────────────────────────────────────────────────
 
     if etype in ("error", "response.error"):
-        err = evt.get("error") or {}
+        err = evt.get("error") or evt
         raise _classify_error(
             err.get("code", "unknown_error"),
             err.get("message", "Streaming error"),
@@ -194,10 +206,22 @@ async def sse_iter(resp: aiohttp.ClientResponse) -> AsyncIterator[ResponseEvent]
     Mirrors ``sse_stream`` (codex-client) + ``process_sse`` (codex-api).
     Skips non-``data:`` lines and ``None`` parse results transparently.
     """
+    data_lines: list[str] = []
+    completed = False
     async for raw_line in resp.content:
-        line = raw_line.decode("utf-8", errors="replace").strip()
-        if not line.startswith("data:"):
-            continue
-        event = parse_event(line[5:].strip())
+        line = raw_line.decode("utf-8", errors="replace").rstrip("\r\n")
+        if line.startswith("data:"):
+            data_lines.append(line[5:].removeprefix(" "))
+        elif not line and data_lines:
+            event = parse_event("\n".join(data_lines))
+            data_lines.clear()
+            if event is not None:
+                completed = completed or isinstance(event, ResponseCompleted)
+                yield event
+    if data_lines:
+        event = parse_event("\n".join(data_lines))
         if event is not None:
+            completed = completed or isinstance(event, ResponseCompleted)
             yield event
+    if not completed:
+        raise CodexStreamError("Stream ended before response.completed")

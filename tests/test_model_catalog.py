@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from custom_components.codex_conversation.codex_api.version import CODEX_HEADERS
 from custom_components.codex_conversation.model_catalog import (
     MODEL_CATALOG_CLIENT_VERSION,
     MODEL_CATALOG_ENDPOINT,
@@ -84,11 +85,47 @@ async def test_fetch_model_catalog_uses_account_credentials() -> None:
         headers={
             "Authorization": "Bearer access-token",
             "Accept": "application/json",
-            "User-Agent": (f"hass-codex-conversation/{MODEL_CATALOG_CLIENT_VERSION}"),
-            "openai-beta": "responses=experimental",
-            "openai-originator": "codex_cli_rs",
-            "originator": "codex_cli_rs",
+            **CODEX_HEADERS,
             "ChatGPT-Account-Id": "account-id",
         },
     )
     response.raise_for_status.assert_called_once_with()
+
+
+async def test_fetch_model_catalog_releases_invalid_response() -> None:
+    """A malformed catalog must not leak the HTTP connection."""
+    response = MagicMock()
+    response.json = AsyncMock(return_value={"models": []})
+    session = MagicMock()
+    session.get = AsyncMock(return_value=response)
+    with pytest.raises(ModelCatalogError):
+        await async_fetch_model_catalog(session, access_token="token")
+    response.release.assert_called_once_with()
+
+
+async def test_catalog_exposes_model_specific_reasoning_levels() -> None:
+    response = MagicMock()
+    response.json = AsyncMock(
+        return_value={
+            "models": [
+                {
+                    "slug": "gpt-6-luna",
+                    "visibility": "list",
+                    "supported_reasoning_levels": [
+                        {"effort": "low"},
+                        {"effort": "medium"},
+                        {"effort": "max"},
+                        {},
+                        None,
+                    ],
+                },
+            ]
+        }
+    )
+    session = MagicMock()
+    session.get = AsyncMock(return_value=response)
+    levels = {}
+    await async_fetch_model_catalog(
+        session, access_token="token", reasoning_levels=levels
+    )
+    assert levels == {"gpt-6-luna": ["low", "medium", "max"]}

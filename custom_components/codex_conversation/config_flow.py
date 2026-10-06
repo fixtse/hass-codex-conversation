@@ -319,6 +319,7 @@ class _BaseCodexSubentryFlow(ConfigSubentryFlow):
             return
         entry = self._get_entry()
         oauth_session = self.hass.data[DOMAIN][entry.entry_id]
+        self._reasoning_levels: dict[str, list[str]] = {}
         try:
             await oauth_session.async_ensure_token_valid()
             token = oauth_session.token
@@ -326,6 +327,7 @@ class _BaseCodexSubentryFlow(ConfigSubentryFlow):
                 async_get_clientsession(self.hass),
                 access_token=token["access_token"],
                 account_id=token.get("account_id", ""),
+                reasoning_levels=self._reasoning_levels,
             )
         except Exception:
             _LOGGER.exception("Failed to fetch available Codex models")
@@ -336,6 +338,19 @@ class _BaseCodexSubentryFlow(ConfigSubentryFlow):
     ) -> SubentryFlowResult:
         """Manage advanced options."""
         options = self.options
+        model = self._init_data.get(CONF_MODEL, options.get(CONF_MODEL, DEFAULT_MODEL))
+        efforts = getattr(self, "_reasoning_levels", {}).get(
+            model, ["low", "medium", "high"]
+        )
+        effort = options.get(CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT)
+        if effort not in efforts:
+            effort = (
+                RECOMMENDED_REASONING_EFFORT
+                if RECOMMENDED_REASONING_EFFORT in efforts
+                else efforts[0]
+            )
+        summary = options.get(CONF_REASONING_SUMMARY, RECOMMENDED_REASONING_SUMMARY)
+        summary = {"short": "concise", "off": "none"}.get(summary, summary)
 
         if user_input is not None:
             data = {**self._init_data, **user_input}
@@ -347,20 +362,19 @@ class _BaseCodexSubentryFlow(ConfigSubentryFlow):
                 {
                     vol.Required(
                         CONF_REASONING_EFFORT,
-                        default=options.get(
-                            CONF_REASONING_EFFORT, RECOMMENDED_REASONING_EFFORT
-                        ),
-                    ): SelectSelector(
-                        SelectSelectorConfig(options=["low", "medium", "high"])
-                    ),
+                        default=effort,
+                    ): SelectSelector(SelectSelectorConfig(options=efforts)),
                     vol.Required(
                         CONF_REASONING_SUMMARY,
-                        default=options.get(
-                            CONF_REASONING_SUMMARY, RECOMMENDED_REASONING_SUMMARY
-                        ),
+                        default=summary,
                     ): SelectSelector(
                         SelectSelectorConfig(
-                            options=["auto", "short", "detailed", "off"]
+                            options=[
+                                "auto",
+                                "concise",
+                                "detailed",
+                                "none",
+                            ]
                         )
                     ),
                     vol.Required(

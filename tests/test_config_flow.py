@@ -14,6 +14,8 @@ from custom_components.codex_conversation.config_flow import (
 )
 from custom_components.codex_conversation.const import (
     CONF_MODEL,
+    CONF_REASONING_EFFORT,
+    CONF_REASONING_SUMMARY,
     DOMAIN,
     RECOMMENDED_CONVERSATION_OPTIONS,
 )
@@ -68,6 +70,25 @@ async def test_initial_model_step_uses_live_catalog(hass) -> None:
         subentry["data"][CONF_MODEL] == "gpt-next" for subentry in created["subentries"]
     )
     fetch_models.assert_awaited_once()
+
+
+async def test_advanced_options_follow_model_and_normalize_legacy_summary(hass) -> None:
+    flow = CodexConversationSubentryFlow()
+    flow.hass = hass
+    flow.options = {
+        **RECOMMENDED_CONVERSATION_OPTIONS,
+        CONF_REASONING_EFFORT: "ultra",
+        CONF_REASONING_SUMMARY: "off",
+    }
+    flow._init_data = {CONF_MODEL: "gpt-6-luna"}
+    flow._reasoning_levels = {"gpt-6-luna": ["low", "medium", "high", "max"]}
+    result = await flow.async_step_advanced()
+    schema = result["data_schema"].schema
+    effort_marker = next(key for key in schema if key.schema == CONF_REASONING_EFFORT)
+    summary_marker = next(key for key in schema if key.schema == CONF_REASONING_SUMMARY)
+    assert effort_marker.default() == "medium"
+    assert schema[effort_marker].config["options"] == ["low", "medium", "high", "max"]
+    assert summary_marker.default() == "none"
 
 
 async def test_initial_model_step_recovers_from_catalog_failure(hass) -> None:

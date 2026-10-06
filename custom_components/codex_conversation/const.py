@@ -14,7 +14,7 @@ CONF_REASONING_SUMMARY = "reasoning_summary"
 CONF_TEXT_VERBOSITY = "text_verbosity"
 
 # Defaults
-DEFAULT_MODEL = "gpt-5.4-codex"
+DEFAULT_MODEL = "gpt-6.1-sol"
 RECOMMENDED_REASONING_EFFORT = "medium"
 RECOMMENDED_REASONING_SUMMARY = "auto"
 RECOMMENDED_TEXT_VERBOSITY = "medium"

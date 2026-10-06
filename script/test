@@ -66,7 +66,7 @@ done
 # Check if pytest is available
 if ! python -c "import pytest" 2>/dev/null; then
     log_info "pytest not found. Installing test dependencies..."
-    uv pip install -e ".[test]"
+    UV_PROJECT_ENVIRONMENT="$VIRTUAL_ENV" uv sync --locked --group dev
 fi
 
 # Run pytest with project configuration

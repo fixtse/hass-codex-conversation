@@ -7,8 +7,10 @@ from typing import Any
 
 import aiohttp
 
+from .codex_api.version import CODEX_CLIENT_VERSION, CODEX_HEADERS
+
 MODEL_CATALOG_ENDPOINT = "https://chatgpt.com/backend-api/codex/models"
-MODEL_CATALOG_CLIENT_VERSION = "1.1.0"
+MODEL_CATALOG_CLIENT_VERSION = CODEX_CLIENT_VERSION
 
 
 class ModelCatalogError(Exception):
@@ -52,15 +54,13 @@ async def async_fetch_model_catalog(
     *,
     access_token: str,
     account_id: str = "",
+    reasoning_levels: dict[str, list[str]] | None = None,
 ) -> list[dict[str, str]]:
     """Fetch picker-visible Codex models for an authenticated account."""
     headers = {
+        **CODEX_HEADERS,
         "Authorization": f"Bearer {access_token}",
         "Accept": "application/json",
-        "User-Agent": f"hass-codex-conversation/{MODEL_CATALOG_CLIENT_VERSION}",
-        "openai-beta": "responses=experimental",
-        "openai-originator": "codex_cli_rs",
-        "originator": "codex_cli_rs",
     }
     if account_id:
         headers["ChatGPT-Account-Id"] = account_id
@@ -70,5 +70,26 @@ async def async_fetch_model_catalog(
         params={"client_version": MODEL_CATALOG_CLIENT_VERSION},
         headers=headers,
     )
-    response.raise_for_status()
-    return parse_model_catalog(await response.json())
+    try:
+        response.raise_for_status()
+        payload = await response.json()
+        options = parse_model_catalog(payload)
+        if reasoning_levels is not None:
+            for item in payload["models"]:
+                if not isinstance(item, Mapping) or not isinstance(
+                    item.get("slug"), str
+                ):
+                    continue
+                levels = item.get("supported_reasoning_levels")
+                if isinstance(levels, list):
+                    efforts = [
+                        level["effort"]
+                        for level in levels
+                        if isinstance(level, Mapping)
+                        and isinstance(level.get("effort"), str)
+                    ]
+                    if efforts:
+                        reasoning_levels[item["slug"]] = efforts
+        return options
+    finally:
+        response.release()

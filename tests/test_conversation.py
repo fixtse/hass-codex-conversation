@@ -25,6 +25,8 @@ from custom_components.codex_conversation.codex_api import (
     CodexQuotaExceeded,
     CodexRateLimited,
     CodexServerOverloaded,
+    CodexStreamError,
+    CodexUsageNotIncluded,
     FunctionCallAdded,
     FunctionCallArgumentsDone,
     OutputTextDelta,
@@ -376,6 +378,8 @@ async def test_handle_message_uses_model_from_options(hass, mock_oauth_session):
         (CodexQuotaExceeded, ("Quota exceeded",)),
         (CodexRateLimited, ("Rate limited",)),
         (CodexServerOverloaded, ("Overloaded",)),
+        (CodexStreamError, ("Stream truncated",)),
+        (CodexUsageNotIncluded, ("Subscription required",)),
     ],
 )
 async def test_handle_message_api_errors_raise_converse_error(

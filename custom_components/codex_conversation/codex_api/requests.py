@@ -7,6 +7,7 @@ Mirrors ``ResponsesApiRequest`` from codex-api/src/endpoint/responses.rs.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import re
 from typing import Any
 
 
@@ -24,7 +25,7 @@ class CodexRequest:
 
     Reasoning parameters (``reasoning``, ``text``, ``include``) are only
     included in the serialised body for models that support them
-    (``gpt-5*`` / ``o*`` series).
+    (GPT-5 and later / ``o*`` series).
     """
 
     model: str
@@ -37,7 +38,10 @@ class CodexRequest:
     tools: list[dict[str, Any]] = field(default_factory=list)
 
     def _is_reasoning_model(self) -> bool:
-        return self.model.startswith(("gpt-5", "o"))
+        match = re.match(r"gpt-(\d+)(?:[.\-]|$)", self.model)
+        return (
+            match is not None and int(match.group(1)) >= 5
+        ) or self.model.startswith(("o1", "o3", "o4", "gpt-daybreak-"))
 
     def to_body(self) -> dict[str, Any]:
         """Serialise to the JSON body expected by the Codex endpoint."""
@@ -52,10 +56,13 @@ class CodexRequest:
         if self.tools:
             body["tools"] = self.tools
         if self._is_reasoning_model():
-            body["reasoning"] = {
-                "effort": self.reasoning_effort,
-                "summary": self.reasoning_summary,
-            }
+            body["reasoning"] = {"effort": self.reasoning_effort}
+            # Keep existing subentry settings compatible with the current wire API.
+            summary = {"short": "concise", "off": "none"}.get(
+                self.reasoning_summary, self.reasoning_summary
+            )
+            if summary != "none":
+                body["reasoning"]["summary"] = summary
             body["text"] = {"verbosity": self.text_verbosity}
             body["include"] = ["reasoning.encrypted_content"]
         return body

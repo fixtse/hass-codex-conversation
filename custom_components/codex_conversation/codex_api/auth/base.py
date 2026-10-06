@@ -6,10 +6,7 @@ from abc import ABC, abstractmethod
 
 import aiohttp
 
-_CODEX_FIXED_HEADERS = {
-    "openai-beta": "responses=experimental",
-    "openai-originator": "codex_cli_rs",
-}
+from ..version import CODEX_HEADERS
 
 
 class AbstractAuth(ABC):
@@ -44,8 +41,8 @@ class AbstractAuth(ABC):
     async def request(self, method: str, **kwargs: object) -> aiohttp.ClientResponse:
         """Make an authenticated request to the Codex endpoint.
 
-        Injects ``Authorization``, ``openai-beta``, ``openai-originator``, and
-        (when available) ``openai-organization`` into every request.
+        Injects ``Authorization``, the Codex client headers, and
+        (when available) ``ChatGPT-Account-Id`` into every request.
         Extra headers passed via ``headers=`` are merged on top.
         """
         extra_headers = dict(kwargs.pop("headers", {}))  # type: ignore[arg-type]
@@ -54,12 +51,12 @@ class AbstractAuth(ABC):
         account_id = await self.async_get_account_id()
 
         headers = {
-            **_CODEX_FIXED_HEADERS,
+            **CODEX_HEADERS,
             "Authorization": f"Bearer {access_token}",
             **extra_headers,
         }
         if account_id:
-            headers["openai-organization"] = account_id
+            headers["ChatGPT-Account-Id"] = account_id
 
         return await self._session.request(
             method,

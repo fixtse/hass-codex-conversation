@@ -111,5 +111,34 @@
         }
       }
     }
+  },
+  "selector": {
+    "reasoning_effort": {
+      "options": {
+        "low": "Basso",
+        "medium": "Medio",
+        "high": "Alto",
+        "xhigh": "Molto alto",
+        "max": "Massimo",
+        "ultra": "Ultra",
+        "none": "Nessuno",
+        "minimal": "Minimo"
+      }
+    },
+    "reasoning_summary": {
+      "options": {
+        "auto": "Automatico",
+        "concise": "Conciso",
+        "detailed": "Dettagliato",
+        "none": "Disattivato"
+      }
+    },
+    "text_verbosity": {
+      "options": {
+        "low": "Bassa",
+        "medium": "Media",
+        "high": "Alta"
+      }
+    }
   }
 }
