@@ -165,3 +165,25 @@ async def test_completion_without_final_frame_separator():
         content=_lines('data: {"type":"response.completed","response":{}}\n')
     )
     assert [event async for event in sse_iter(response)] == [ResponseCompleted()]
+
+
+def test_web_search_is_live_and_preserves_home_assistant_tools():
+    """Hosted search must coexist with function tools without mutating inputs."""
+    tools = [{"type": "function", "name": "get_time", "parameters": {}}]
+    request = CodexRequest(model="gpt-6-luna", input=[], tools=tools, web_search=True)
+    expected = [*tools, {"type": "web_search", "external_web_access": True}]
+    assert request.to_body()["tools"] == expected
+    assert request.to_body()["tools"] == expected
+    assert len(tools) == 1
+
+
+def test_disabling_web_search_omits_only_the_hosted_tool():
+    tools = [{"type": "function", "name": "get_time", "parameters": {}}]
+    body = CodexRequest(
+        model="gpt-6-luna", input=[], tools=tools, web_search=False
+    ).to_body()
+    assert body["tools"] == tools
+    assert (
+        "tools"
+        not in CodexRequest(model="gpt-6-luna", input=[], web_search=False).to_body()
+    )

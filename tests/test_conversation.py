@@ -516,3 +516,69 @@ async def test_async_run_chat_log_appends_attachment_items(tmp_path):
     assert len(captured_requests) == 1
     content = captured_requests[0].input[-1]["content"]
     assert any(item["type"] == "input_image" for item in content)
+
+
+@pytest.mark.parametrize(
+    "setting,enabled", [(None, True), (True, True), (False, False)]
+)
+async def test_conversation_web_search_setting(mock_entity, setting, enabled):
+    """Existing agents default to live search; explicit opt-out reaches the wire."""
+    from custom_components.codex_conversation.const import CONF_WEB_SEARCH
+
+    if setting is not None:
+        mock_entity._subentry.data[CONF_WEB_SEARCH] = setting
+    else:
+        mock_entity._subentry.data.pop(CONF_WEB_SEARCH, None)
+    captured = []
+
+    async def stream(request):
+        captured.append(request.to_body())
+        yield OutputTextDelta(delta="Answer", content_index=0)
+
+    chat_log = make_chat_log([UserContent(content="Find today's news")])
+    user_input = MagicMock()
+    user_input.extra_system_prompt = None
+    with (
+        patch(
+            "custom_components.codex_conversation.conversation.CodexClient"
+        ) as client,
+        patch(
+            "custom_components.codex_conversation.conversation.conversation.async_get_result_from_chat_log"
+        ),
+    ):
+        client.return_value.stream = stream
+        await mock_entity._async_handle_message(user_input, chat_log)
+    assert (
+        any(t["type"] == "web_search" for t in captured[0].get("tools", [])) is enabled
+    )
+
+
+async def test_hosted_search_does_not_call_home_assistant_tools():
+    """Search runs on OpenAI's servers and its source links survive streaming."""
+    from custom_components.codex_conversation.codex_api import CodexRequest
+    from custom_components.codex_conversation.codex_api.models import (
+        OutputItemAdded,
+        OutputItemDone,
+    )
+    from custom_components.codex_conversation.conversation import _events_to_deltas
+
+    class Client:
+        async def stream(self, request):
+            yield OutputItemAdded(item={"type": "web_search_call", "id": "ws_1"})
+            yield OutputItemDone(
+                item={"type": "web_search_call", "id": "ws_1", "status": "completed"}
+            )
+            yield OutputTextDelta(
+                delta="[Source](https://example.com)", content_index=0
+            )
+
+    deltas = [
+        d
+        async for d in _events_to_deltas(
+            Client(), CodexRequest(model="gpt-6-luna", input=[], web_search=True)
+        )
+    ]
+    assert deltas == [
+        {"role": "assistant"},
+        {"content": "[Source](https://example.com)"},
+    ]

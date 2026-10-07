@@ -45,7 +45,9 @@ from .const import (
     CONF_REASONING_EFFORT,
     CONF_REASONING_SUMMARY,
     CONF_TEXT_VERBOSITY,
+    CONF_WEB_SEARCH,
     DEFAULT_MODEL,
+    DEFAULT_WEB_SEARCH,
     DOMAIN,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_REASONING_SUMMARY,
@@ -178,6 +180,7 @@ class CodexConversationEntity(ConversationEntity):
             text_verbosity=self._options.get(
                 CONF_TEXT_VERBOSITY, RECOMMENDED_TEXT_VERBOSITY
             ),
+            web_search=self._options.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH),
             error_cls=ConverseError,
         )
 
@@ -193,6 +196,7 @@ async def async_run_chat_log(
     reasoning_effort: str,
     reasoning_summary: str,
     text_verbosity: str,
+    web_search: bool = DEFAULT_WEB_SEARCH,
     max_iterations: int = MAX_TOOL_ITERATIONS,
     instructions_suffix: str = "",
     error_cls: type[Exception] = HomeAssistantError,
@@ -228,6 +232,7 @@ async def async_run_chat_log(
             input=input_items,
             instructions=instructions,
             tools=tools,
+            web_search=web_search,
             reasoning_effort=reasoning_effort,
             reasoning_summary=reasoning_summary,
             text_verbosity=text_verbosity,

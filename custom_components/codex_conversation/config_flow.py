@@ -33,7 +33,9 @@ from .const import (
     CONF_REASONING_SUMMARY,
     CONF_RECOMMENDED,
     CONF_TEXT_VERBOSITY,
+    CONF_WEB_SEARCH,
     DEFAULT_MODEL,
+    DEFAULT_WEB_SEARCH,
     DOMAIN,
     RECOMMENDED_AI_TASK_OPTIONS,
     RECOMMENDED_CONVERSATION_OPTIONS,
@@ -122,10 +124,16 @@ class CodexConversationConfigFlow(ConfigFlow, domain=DOMAIN):
                 conversation_options = {
                     **RECOMMENDED_CONVERSATION_OPTIONS,
                     CONF_MODEL: selected_model,
+                    CONF_WEB_SEARCH: user_input.get(
+                        CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH
+                    ),
                 }
                 ai_task_options = {
                     **RECOMMENDED_AI_TASK_OPTIONS,
                     CONF_MODEL: selected_model,
+                    CONF_WEB_SEARCH: user_input.get(
+                        CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH
+                    ),
                 }
                 return self._async_create_codex_entry(
                     conversation_options, ai_task_options
@@ -139,7 +147,8 @@ class CodexConversationConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(
                         CONF_MODEL,
                         default=_selected_or_first(DEFAULT_MODEL, options),
-                    ): SelectSelector(SelectSelectorConfig(options=options))
+                    ): SelectSelector(SelectSelectorConfig(options=options)),
+                    vol.Required(CONF_WEB_SEARCH, default=DEFAULT_WEB_SEARCH): bool,
                 }
             ),
             errors=errors,
@@ -257,6 +266,9 @@ class _BaseCodexSubentryFlow(ConfigSubentryFlow):
                 data = {
                     **self._default_data,
                     CONF_MODEL: user_input[CONF_MODEL],
+                    CONF_WEB_SEARCH: user_input.get(
+                        CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH
+                    ),
                 }
                 if self._supports_prompt_and_apis:
                     data[CONF_PROMPT] = user_input.get(
@@ -308,6 +320,13 @@ class _BaseCodexSubentryFlow(ConfigSubentryFlow):
                     default=options.get(CONF_RECOMMENDED, True),
                 ): bool,
             }
+
+        step_schema[
+            vol.Required(
+                CONF_WEB_SEARCH,
+                default=options.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH),
+            )
+        ] = bool
 
         return self.async_show_form(
             step_id="init", data_schema=vol.Schema(step_schema), errors=errors
@@ -380,7 +399,8 @@ class _BaseCodexSubentryFlow(ConfigSubentryFlow):
                     vol.Required(
                         CONF_TEXT_VERBOSITY,
                         default=options.get(
-                            CONF_TEXT_VERBOSITY, RECOMMENDED_TEXT_VERBOSITY
+                            CONF_TEXT_VERBOSITY,
+                            RECOMMENDED_TEXT_VERBOSITY,
                         ),
                     ): SelectSelector(
                         SelectSelectorConfig(options=["low", "medium", "high"])

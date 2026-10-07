@@ -20,7 +20,9 @@ from .const import (
     CONF_REASONING_EFFORT,
     CONF_REASONING_SUMMARY,
     CONF_TEXT_VERBOSITY,
+    CONF_WEB_SEARCH,
     DEFAULT_MODEL,
+    DEFAULT_WEB_SEARCH,
     DOMAIN,
     RECOMMENDED_REASONING_EFFORT,
     RECOMMENDED_REASONING_SUMMARY,
@@ -113,6 +115,7 @@ class CodexAITaskEntity(ai_task.AITaskEntity):
             text_verbosity=self._options.get(
                 CONF_TEXT_VERBOSITY, RECOMMENDED_TEXT_VERBOSITY
             ),
+            web_search=self._options.get(CONF_WEB_SEARCH, DEFAULT_WEB_SEARCH),
             instructions_suffix=_format_structure_instruction(task),
             max_iterations=100,
         )

@@ -97,3 +97,32 @@ def test_format_structure_instruction():
     assert "Return only valid JSON." in instruction
     assert "name" in instruction
     assert "age" in instruction
+
+
+@pytest.mark.parametrize(
+    "setting,enabled", [(None, True), (True, True), (False, False)]
+)
+async def test_ai_task_web_search_setting(mock_ai_task_entity, setting, enabled):
+    from custom_components.codex_conversation.const import CONF_WEB_SEARCH
+
+    if setting is not None:
+        mock_ai_task_entity._subentry.data[CONF_WEB_SEARCH] = setting
+    else:
+        mock_ai_task_entity._subentry.data.pop(CONF_WEB_SEARCH, None)
+    captured = []
+
+    async def stream(request):
+        captured.append(request.to_body())
+        yield OutputTextDelta(delta="Result", content_index=0)
+
+    task = MagicMock(spec=ai_task_component.GenDataTask)
+    task.structure = None
+    chat_log = make_chat_log(
+        [AssistantContent(agent_id="ai_task.codex", content="Result", tool_calls=None)]
+    )
+    with patch("custom_components.codex_conversation.ai_task.CodexClient") as client:
+        client.return_value.stream = stream
+        await mock_ai_task_entity._async_generate_data(task, chat_log)
+    assert (
+        any(t["type"] == "web_search" for t in captured[0].get("tools", [])) is enabled
+    )

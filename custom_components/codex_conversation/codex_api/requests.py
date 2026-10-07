@@ -36,6 +36,7 @@ class CodexRequest:
     reasoning_summary: str = "auto"
     text_verbosity: str = "medium"
     tools: list[dict[str, Any]] = field(default_factory=list)
+    web_search: bool = False
 
     def _is_reasoning_model(self) -> bool:
         match = re.match(r"gpt-(\d+)(?:[.\-]|$)", self.model)
@@ -53,8 +54,11 @@ class CodexRequest:
         }
         if self.instructions:
             body["instructions"] = self.instructions
-        if self.tools:
-            body["tools"] = self.tools
+        tools = list(self.tools)
+        if self.web_search:
+            tools.append({"type": "web_search", "external_web_access": True})
+        if tools:
+            body["tools"] = tools
         if self._is_reasoning_model():
             body["reasoning"] = {"effort": self.reasoning_effort}
             # Keep existing subentry settings compatible with the current wire API.

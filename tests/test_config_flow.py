@@ -4,9 +4,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.config_entries import ConfigEntryState
 from homeassistant.data_entry_flow import FlowResultType
+import pytest
 
 from custom_components.codex_conversation.codex_api.auth import OAuthToken
 from custom_components.codex_conversation.config_flow import (
+    CodexAITaskSubentryFlow,
     CodexConversationConfigFlow,
     CodexConversationSubentryFlow,
     _fallback_model_options,
@@ -157,3 +159,63 @@ async def test_subentry_form_refreshes_models_and_replaces_retired_default(
     assert model_marker.default() == "gpt-current"
     oauth_session.async_ensure_token_valid.assert_awaited_once()
     fetch_models.assert_awaited_once()
+
+
+async def test_setup_web_search_toggle_applies_to_both_default_agents(hass):
+    from custom_components.codex_conversation.const import CONF_WEB_SEARCH
+
+    flow = CodexConversationConfigFlow()
+    flow.hass = hass
+    flow._token = OAuthToken(
+        access_token="access",
+        refresh_token="refresh",
+        account_id="account",
+        expires_at=9_999_999_999,
+        expires_in=3600,
+    )
+    flow._model_options = [{"value": "gpt-6-luna", "label": "Luna"}]
+    form = await flow.async_step_model()
+    marker = next(k for k in form["data_schema"].schema if k.schema == CONF_WEB_SEARCH)
+    assert marker.default() is True
+    result = await flow.async_step_model(
+        {CONF_MODEL: "gpt-6-luna", CONF_WEB_SEARCH: False}
+    )
+    assert all(s["data"][CONF_WEB_SEARCH] is False for s in result["subentries"])
+
+
+@pytest.mark.parametrize(
+    "flow_class", [CodexConversationSubentryFlow, CodexAITaskSubentryFlow]
+)
+@pytest.mark.parametrize("recommended", [True, False])
+async def test_web_search_toggle_is_visible_and_persists(hass, flow_class, recommended):
+    from custom_components.codex_conversation.const import (
+        CONF_RECOMMENDED,
+        CONF_WEB_SEARCH,
+    )
+
+    flow = flow_class()
+    flow.hass = hass
+    flow.options = {**flow._default_data, CONF_WEB_SEARCH: False}
+    flow._init_data = {}
+    flow._model_options = [{"value": "gpt-6-luna", "label": "Luna"}]
+    flow._get_entry = MagicMock(return_value=MagicMock(state=ConfigEntryState.LOADED))
+    flow._finalize_subentry = MagicMock(side_effect=lambda data: data)
+    form = await flow.async_step_init()
+    marker = next(k for k in form["data_schema"].schema if k.schema == CONF_WEB_SEARCH)
+    assert marker.default() is False
+    data = {
+        CONF_MODEL: "gpt-6-luna",
+        CONF_RECOMMENDED: recommended,
+        CONF_WEB_SEARCH: False,
+    }
+    result = await flow.async_step_init(data)
+    if not recommended:
+        assert result["step_id"] == "advanced"
+        result = await flow.async_step_advanced(
+            {
+                "reasoning_effort": "high",
+                "reasoning_summary": "auto",
+                "text_verbosity": "medium",
+            }
+        )
+    assert result[CONF_WEB_SEARCH] is False

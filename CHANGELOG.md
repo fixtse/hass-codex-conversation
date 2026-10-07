@@ -2,6 +2,29 @@
 
 <!-- version list -->
 
+## v1.3.0 (2026-10-07)
+
+### Features
+
+- Enable OpenAI's hosted live web search by default for conversation agents and
+  AI tasks, including existing subentries without a web-search setting.
+- Add an **Allow web search** toggle to initial setup and the first subentry
+  reconfiguration form, visible with recommended settings enabled or disabled.
+- Persist the opt-out through recommended and advanced settings. Turning search
+  off removes only the hosted search tool; Home Assistant function tools remain.
+- Request `web_search` with `external_web_access: true` using the existing Codex
+  OAuth login. OpenAI executes search server-side; the model decides when to use it.
+- Explain live search, its default, the toggle location and reasoning settings
+  in the README; add English and Italian UI labels/descriptions.
+
+### Validation
+
+- 248 tests pass, including setup/reconfiguration persistence, existing-agent
+  defaults, both platforms, mixed tool serialization, and hosted-search streaming.
+- Live OAuth verification with `gpt-6-luna` returned HTTP 200, a completed hosted
+  search call and source-linked output with search enabled. Search-disabled
+  requests are also checked against the live backend.
+
 ## v1.2.0 (2026-10-06)
 
 ### Features

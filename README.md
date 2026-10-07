@@ -73,9 +73,26 @@ effort choices follow the selected model’s advertised capabilities. If a
 configured model is retired, reconfiguration selects the first currently
 available model so it can be replaced.
 
-| Option | Description                                            | Default                                                     |
-| ------ | ------------------------------------------------------ | ----------------------------------------------------------- |
-| Model  | Codex model used for the conversation agent or AI task | `gpt-6.1-sol` when available, otherwise first account model |
+**Allow web search** is visible on the first setup/reconfiguration form for both
+conversation agents and AI tasks, independently of recommended model settings.
+It is **on by default**, including for existing agents after upgrading. It enables
+OpenAI’s hosted `web_search` tool with live internet access using your existing
+Codex login; no separate search integration, API key or local browser is needed.
+The model decides when a search is useful, so enabling it does not force every
+answer to browse. Turn it off to omit the hosted search tool while keeping Home
+Assistant controls available.
+
+This differs from the Codex CLI’s usual cached-search default: the integration
+explicitly requests live access. See [OpenAI’s web search documentation](https://developers.openai.com/api/docs/guides/tools-web-search)
+and [Codex configuration](https://learn.chatgpt.com/docs/config-file/config-basic).
+
+To change reasoning effort, uncheck **Recommended model settings**, submit, then
+choose the model-supported effort on the **Advanced settings** screen.
+
+| Option           | Description                                            | Default                                                     |
+| ---------------- | ------------------------------------------------------ | ----------------------------------------------------------- |
+| Model            | Codex model used for the conversation agent or AI task | `gpt-6.1-sol` when available, otherwise first account model |
+| Allow web search | Allow OpenAI-hosted live web search                    | On                                                          |
 
 ## Usage Sensors
 

@@ -12,7 +12,11 @@
         "title": "Scegli un modello Codex",
         "description": "I modelli vengono caricati dall'account OpenAI connesso ogni volta che si apre questo modulo.",
         "data": {
-          "model": "Modello"
+          "model": "Modello",
+          "web_search": "Consenti ricerca web"
+        },
+        "data_description": {
+          "web_search": "Consente al modello di cercare informazioni aggiornate su Internet tramite lo strumento web di OpenAI, usando il login Codex esistente. Il modello decide quando cercare; disattiva per rimuovere lo strumento."
         }
       }
     },
@@ -51,11 +55,13 @@
             "model": "Modello",
             "llm_hass_api": "Controlli Home Assistant",
             "prompt": "Istruzioni",
-            "recommended": "Impostazioni modello consigliate"
+            "recommended": "Impostazioni modello consigliate",
+            "web_search": "Consenti ricerca web"
           },
           "data_description": {
             "prompt": "Indica al modello come rispondere. Può essere un template.",
-            "llm_hass_api": "Seleziona le API di Home Assistant da esporre al modello."
+            "llm_hass_api": "Seleziona le API di Home Assistant da esporre al modello.",
+            "web_search": "Consente al modello di cercare informazioni aggiornate su Internet tramite lo strumento web di OpenAI, usando il login Codex esistente. Il modello decide quando cercare; disattiva per rimuovere lo strumento."
           }
         },
         "advanced": {
@@ -92,7 +98,11 @@
         "init": {
           "data": {
             "model": "Modello",
-            "recommended": "Impostazioni modello consigliate"
+            "recommended": "Impostazioni modello consigliate",
+            "web_search": "Consenti ricerca web"
+          },
+          "data_description": {
+            "web_search": "Consente al modello di cercare informazioni aggiornate su Internet tramite lo strumento web di OpenAI, usando il login Codex esistente. Il modello decide quando cercare; disattiva per rimuovere lo strumento."
           }
         },
         "advanced": {

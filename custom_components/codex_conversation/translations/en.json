@@ -12,7 +12,11 @@
         "title": "Choose a Codex model",
         "description": "Models are loaded from the signed-in OpenAI account each time this form opens.",
         "data": {
-          "model": "Model"
+          "model": "Model",
+          "web_search": "Allow web search"
+        },
+        "data_description": {
+          "web_search": "Let the model search the live internet using OpenAI’s built-in web tool and your existing Codex login. The model decides when to search; turn off to remove the tool."
         }
       }
     },
@@ -51,11 +55,13 @@
             "model": "Model",
             "llm_hass_api": "Home Assistant controls",
             "prompt": "Instructions",
-            "recommended": "Recommended model settings"
+            "recommended": "Recommended model settings",
+            "web_search": "Allow web search"
           },
           "data_description": {
             "prompt": "Instruct how the model should respond. This can be a template.",
-            "llm_hass_api": "Select the Home Assistant API to expose to the model."
+            "llm_hass_api": "Select the Home Assistant API to expose to the model.",
+            "web_search": "Let the model search the live internet using OpenAI’s built-in web tool and your existing Codex login. The model decides when to search; turn off to remove the tool."
           }
         },
         "advanced": {
@@ -92,7 +98,11 @@
         "init": {
           "data": {
             "model": "Model",
-            "recommended": "Recommended model settings"
+            "recommended": "Recommended model settings",
+            "web_search": "Allow web search"
+          },
+          "data_description": {
+            "web_search": "Let the model search the live internet using OpenAI’s built-in web tool and your existing Codex login. The model decides when to search; turn off to remove the tool."
           }
         },
         "advanced": {
