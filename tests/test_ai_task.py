@@ -7,6 +7,10 @@ from unittest.mock import MagicMock, patch
 
 from homeassistant.components import ai_task as ai_task_component
 from homeassistant.components.conversation import AssistantContent
+from homeassistant.config_entries import ConfigSubentry
+from homeassistant.const import Platform
+from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.setup import async_setup_component
 import pytest
 import voluptuous as vol
 
@@ -15,9 +19,62 @@ from custom_components.codex_conversation.ai_task import (
     _format_structure_instruction,
 )
 from custom_components.codex_conversation.codex_api import OutputTextDelta
-from custom_components.codex_conversation.const import DOMAIN
+from custom_components.codex_conversation.const import DOMAIN, RECOMMENDED_AI_TASK_OPTIONS
 
 from .conftest import make_chat_log
+
+
+async def test_ai_tasks_register_separate_entities_and_devices(
+    hass, mock_config_entry, enable_custom_integrations
+):
+    """Task subentries must register without taking over the account device."""
+    assert await async_setup_component(hass, "homeassistant", {})
+    mock_config_entry.add_to_hass(hass)
+    devices = dr.async_get(hass)
+    account = devices.async_get_or_create(
+        config_entry_id=mock_config_entry.entry_id,
+        identifiers={(DOMAIN, mock_config_entry.entry_id)},
+        name="OpenAI Codex",
+        entry_type=dr.DeviceEntryType.SERVICE,
+    )
+    tasks = [
+        ConfigSubentry(
+            subentry_type="ai_task_data",
+            title=f"Codex Task {index}",
+            data=RECOMMENDED_AI_TASK_OPTIONS.copy(),
+            unique_id=None,
+        )
+        for index in range(2)
+    ]
+    for task in tasks:
+        hass.config_entries.async_add_subentry(mock_config_entry, task)
+
+    with patch("custom_components.codex_conversation.PLATFORMS", [Platform.AI_TASK]):
+        assert await hass.config_entries.async_setup(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        registry = er.async_get(hass)
+        device_ids = {account.id}
+        entity_ids = []
+        for task in tasks:
+            entity_id = registry.async_get_entity_id("ai_task", DOMAIN, task.subentry_id)
+            assert entity_id is not None
+            assert hass.states.get(entity_id) is not None
+            entity = registry.async_get(entity_id)
+            assert entity.config_subentry_id == task.subentry_id
+            device = devices.async_get(entity.device_id)
+            assert device.identifiers == {(DOMAIN, task.subentry_id)}
+            assert device.entry_type == dr.DeviceEntryType.SERVICE
+            device_ids.add(device.id)
+            entity_ids.append(entity_id)
+        assert len(device_ids) == 3
+        assert devices.async_get(account.id).config_subentry_id is None
+
+        assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
+        await hass.async_block_till_done()
+        for task, entity_id in zip(tasks, entity_ids, strict=True):
+            assert registry.async_get_entity_id("ai_task", DOMAIN, task.subentry_id) == entity_id
+            assert hass.states.get(entity_id) is not None
+        assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
 
 
 @pytest.fixture

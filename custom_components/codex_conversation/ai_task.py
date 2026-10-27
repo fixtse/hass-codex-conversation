@@ -9,7 +9,7 @@ from homeassistant.components import ai_task, conversation
 from homeassistant.config_entries import ConfigEntry, ConfigSubentry
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.helpers import config_entry_oauth2_flow
+from homeassistant.helpers import config_entry_oauth2_flow, device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.util.json import json_loads
@@ -80,14 +80,15 @@ class CodexAITaskEntity(ai_task.AITaskEntity):
         return self._subentry.data
 
     @property
-    def device_info(self) -> dict:
+    def device_info(self) -> dr.DeviceInfo:
         """Return the device info."""
-        return {
-            "identifiers": {(DOMAIN, self._entry.entry_id)},
-            "name": "OpenAI Codex",
-            "manufacturer": "OpenAI",
-            "model": self._options.get(CONF_MODEL, DEFAULT_MODEL),
-        }
+        return dr.DeviceInfo(
+            identifiers={(DOMAIN, self._subentry.subentry_id)},
+            name=self._subentry.title,
+            manufacturer="OpenAI",
+            model=self._options.get(CONF_MODEL, DEFAULT_MODEL),
+            entry_type=dr.DeviceEntryType.SERVICE,
+        )
 
     async def _async_generate_data(
         self,
