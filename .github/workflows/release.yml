@@ -63,3 +63,65 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: uv tool run --from python-semantic-release semantic-release publish
+
+  notify:
+    name: Report release result
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [lint, tests, validate, release]
+
+    steps:
+      - name: Notify the release status
+        env:
+          WEBHOOK_URL: ${{ secrets.T3_RELEASE_WEBHOOK }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_STATUS: ${{ needs.release.result }}
+          LINT_STATUS: ${{ needs.lint.result }}
+          TEST_STATUS: ${{ needs.tests.result }}
+          VALIDATE_STATUS: ${{ needs.validate.result }}
+          REPOSITORY: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          REVISION: ${{ github.sha }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          payload = {
+              "run_id": os.environ["RUN_ID"],
+              "run_number": os.environ["RUN_NUMBER"],
+              "run_attempt": os.environ["RUN_ATTEMPT"],
+              "status": os.environ["RUN_STATUS"],
+              "jobs": {
+                  "lint": os.environ["LINT_STATUS"],
+                  "tests": os.environ["TEST_STATUS"],
+                  "validate": os.environ["VALIDATE_STATUS"],
+                  "release": os.environ["RUN_STATUS"],
+              },
+              "repository": os.environ["REPOSITORY"],
+              "branch": os.environ["BRANCH"],
+              "revision": os.environ["REVISION"],
+              "url": os.environ["RUN_URL"],
+          }
+          request = urllib.request.Request(
+              os.environ["WEBHOOK_URL"],
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Content-Type": "application/json",
+                  "User-Agent": "hass-codex-conversation-release/1.0",
+              },
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=15) as response:
+                  print(f"Release callback accepted: HTTP {response.status}")
+          except Exception as err:
+              detail = str(err)[:300]
+              print(f"Release callback failed ({type(err).__name__}): {detail}")
+              raise
+          PY
