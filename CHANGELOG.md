@@ -2,6 +2,24 @@
 
 <!-- version list -->
 
+## v1.3.1 (2026-10-27)
+
+### Bug Fixes
+
+- Register separate devices for AI task subentries
+  ([`0c0d744`](https://github.com/fixtse/hass-codex-conversation/commit/0c0d74402f78c502055885bf46a6f6fc52467734))
+
+### Code Style
+
+- Format ai task registration test
+  ([`51b4b77`](https://github.com/fixtse/hass-codex-conversation/commit/51b4b77ce9071f824d8d8c0624f29dfb83d5df49))
+
+### Continuous Integration
+
+- Report release workflow completion
+  ([`6e13abe`](https://github.com/fixtse/hass-codex-conversation/commit/6e13abe0f5d5a0a975caa76bcb825ee489362602))
+
+
 ## v1.3.0 (2026-10-07)
 
 ### Features
