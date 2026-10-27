@@ -19,7 +19,10 @@ from custom_components.codex_conversation.ai_task import (
     _format_structure_instruction,
 )
 from custom_components.codex_conversation.codex_api import OutputTextDelta
-from custom_components.codex_conversation.const import DOMAIN, RECOMMENDED_AI_TASK_OPTIONS
+from custom_components.codex_conversation.const import (
+    DOMAIN,
+    RECOMMENDED_AI_TASK_OPTIONS,
+)
 
 from .conftest import make_chat_log
 
@@ -56,7 +59,9 @@ async def test_ai_tasks_register_separate_entities_and_devices(
         device_ids = {account.id}
         entity_ids = []
         for task in tasks:
-            entity_id = registry.async_get_entity_id("ai_task", DOMAIN, task.subentry_id)
+            entity_id = registry.async_get_entity_id(
+                "ai_task", DOMAIN, task.subentry_id
+            )
             assert entity_id is not None
             assert hass.states.get(entity_id) is not None
             entity = registry.async_get(entity_id)
@@ -72,7 +77,10 @@ async def test_ai_tasks_register_separate_entities_and_devices(
         assert await hass.config_entries.async_reload(mock_config_entry.entry_id)
         await hass.async_block_till_done()
         for task, entity_id in zip(tasks, entity_ids, strict=True):
-            assert registry.async_get_entity_id("ai_task", DOMAIN, task.subentry_id) == entity_id
+            assert (
+                registry.async_get_entity_id("ai_task", DOMAIN, task.subentry_id)
+                == entity_id
+            )
             assert hass.states.get(entity_id) is not None
         assert await hass.config_entries.async_unload(mock_config_entry.entry_id)
 
